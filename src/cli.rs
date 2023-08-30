@@ -1,6 +1,7 @@
 use std::ops::RangeInclusive;
 
 use clap::Parser;
+use clap_verbosity_flag::WarnLevel;
 
 const PORT_RANGE: RangeInclusive<usize> = 1..=65535;
 
@@ -29,6 +30,10 @@ pub struct Cli {
     /// Port number to connect to or listen on
     #[arg(value_parser = port_in_range)]
     pub port: Option<u16>,
+
+    /// Set verbosity level
+    #[clap(flatten)]
+    pub verbose: clap_verbosity_flag::Verbosity<WarnLevel>,
 }
 
 /// This function parses the port from the command line arguments.
@@ -44,5 +49,30 @@ fn port_in_range(s: &str) -> Result<u16, String> {
             PORT_RANGE.start(),
             PORT_RANGE.end()
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_port_in_range() -> Result<(), String> {
+        let port = port_in_range("1")?;
+
+        assert_eq!(port, 1);
+        Ok(())
+    }
+
+    #[test]
+    #[should_panic(expected = "port not in range 1-65535")]
+    fn test_port_not_in_range() {
+        port_in_range("65536").unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "`a` isn't a port number")]
+    fn test_port_not_a_number() {
+        port_in_range("a").unwrap();
     }
 }
