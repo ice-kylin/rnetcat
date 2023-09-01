@@ -11,40 +11,33 @@ use tokio_util::sync::CancellationToken;
 use crate::cli;
 use crate::{cancellable_task, util};
 
-use super::HostAddr;
+use super::parse;
 
 pub async fn start_listener(cli: &cli::Cli) {
-    let host_addr = match super::parse_host_addr(cli.listen, &cli.hostname, cli.port) {
-        Ok(host_addr) => host_addr,
+    let socket_addr = match parse::parse_socket_addr(cli) {
+        Ok(socket_addr) => socket_addr,
         Err(e) => {
             error!("{}. QUITTING", e);
             process::exit(exitcode::USAGE);
         }
     };
 
-    match tcp_listener_from(&host_addr).await {
+    match tcp_listener_from(&socket_addr).await {
         Ok(listener) => {
-            listening_on(&listener, &host_addr, cli).await;
+            listening_on(&listener, &socket_addr, cli).await;
         }
         Err(e) => {
-            error!("Bind to {}: {}. QUITTING", host_addr, e);
+            error!("Bind to {}: {}. QUITTING", socket_addr, e);
             process::exit(exitcode::NOHOST);
         }
     };
 }
 
-async fn tcp_listener_from(host_addr: &HostAddr) -> io::Result<TcpListener> {
-    match host_addr.hostname {
-        super::Hostname::Name(ref host) => {
-            TcpListener::bind(format!("{}:{}", host, host_addr.port)).await
-        }
-        super::Hostname::Addr(addr) => {
-            TcpListener::bind(SocketAddr::new(addr, host_addr.port)).await
-        }
-    }
+async fn tcp_listener_from(socket_addr: &SocketAddr) -> io::Result<TcpListener> {
+    TcpListener::bind(socket_addr).await
 }
 
-async fn listening_on(listener: &TcpListener, host_addr: &HostAddr, cli: &cli::Cli) {
+async fn listening_on(listener: &TcpListener, socket_addr: &SocketAddr, cli: &cli::Cli) {
     let (tx, _) = broadcast::channel(16);
     let tk = CancellationToken::new();
 
@@ -60,7 +53,7 @@ async fn listening_on(listener: &TcpListener, host_addr: &HostAddr, cli: &cli::C
         }
     });
 
-    info!("Listening on {}.", host_addr);
+    info!("Listening on {}.", socket_addr);
 
     loop {
         let (socket, addr) = listener.accept().await.unwrap();
@@ -93,5 +86,5 @@ async fn listening_on(listener: &TcpListener, host_addr: &HostAddr, cli: &cli::C
         }
     }
 
-    info!("Listener on {} closed.", host_addr);
+    info!("Listener on {} closed.", socket_addr);
 }

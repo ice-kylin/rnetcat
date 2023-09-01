@@ -16,7 +16,7 @@ pub mod util;
 pub async fn run(cli: &cli::Cli) {
     print_info();
     process(cli).await;
-    exit();
+    process::exit(exitcode::OK);
 }
 
 /// Print the application information.
@@ -40,9 +40,4 @@ async fn process(cli: &cli::Cli) {
     } else {
         connector::connect_to_server().await;
     }
-}
-
-/// Exit the application.
-fn exit() {
-    process::exit(exitcode::OK);
 }
