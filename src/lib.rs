@@ -12,7 +12,7 @@ pub mod util;
 ///
 /// # Arguments
 ///
-/// * `cli` - The command line arguments.
+/// * `cli`: The command line arguments.
 pub async fn run(cli: &cli::Cli) {
     print_info();
     process(cli).await;
@@ -30,10 +30,6 @@ fn print_info() {
 }
 
 /// Process the application.
-///
-/// # Arguments
-///
-/// * `cli` - The command line arguments.
 async fn process(cli: &cli::Cli) {
     if cli.listen {
         listener::start_listener(&cli).await;

@@ -59,6 +59,19 @@ fn port_in_range(s: &str) -> Result<u16, String> {
     }
 }
 
+impl Cli {
+    /// Reorder the hostname and port.
+    #[allow(dead_code)] // TODO: Check this attribute.
+    pub fn reorder(&mut self) {
+        if self.listen && self.hostname.is_some() && self.port.is_none() {
+            if let Ok(port) = self.hostname.as_ref().unwrap().parse::<u16>() {
+                self.hostname = None;
+                self.port = Some(port);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
