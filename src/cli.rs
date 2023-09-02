@@ -1,6 +1,6 @@
 use std::ops::RangeInclusive;
 
-use clap::Parser;
+use clap::{Args, Parser};
 use clap_verbosity_flag::WarnLevel;
 
 const PORT_RANGE: RangeInclusive<usize> = 1..=65535;
@@ -8,13 +8,8 @@ const PORT_RANGE: RangeInclusive<usize> = 1..=65535;
 #[derive(Parser)]
 #[command(author, version, about, long_about)]
 pub struct Cli {
-    /// Use IPv4 only
-    #[arg(short = '4', long = None)]
-    pub ipv4: bool,
-
-    /// Use IPv6 only
-    #[arg(short = '6', long = None)]
-    pub ipv6: bool,
+    #[command(flatten)]
+    pub ipvs: Ipvs,
 
     /// Bind and listen for incoming connections
     #[arg(short = 'l', long = "listen")]
@@ -34,6 +29,18 @@ pub struct Cli {
     /// Set verbosity level
     #[clap(flatten)]
     pub verbose: clap_verbosity_flag::Verbosity<WarnLevel>,
+}
+
+#[derive(Args)]
+#[group(required = false, multiple = false)]
+pub struct Ipvs {
+    /// Use IPv4 only
+    #[arg(short = '4', long = None)]
+    pub ipv4: bool,
+
+    /// Use IPv6 only
+    #[arg(short = '6', long = None)]
+    pub ipv6: bool,
 }
 
 /// This function parses the port from the command line arguments.
