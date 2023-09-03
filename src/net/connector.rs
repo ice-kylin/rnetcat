@@ -5,7 +5,7 @@ use log::error;
 use tokio::net::TcpStream;
 
 use crate::cli;
-use crate::network::connectable::Connectable;
+use crate::net::connectable::Connectable;
 
 struct Connector<'a> {
     cli: &'a cli::Cli,

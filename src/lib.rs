@@ -2,10 +2,10 @@ use std::process;
 
 use log::info;
 
-use network::{connector, listener};
+use net::{connector, listener};
 
 pub mod cli;
-pub mod network;
+pub mod net;
 pub mod util;
 
 /// Run the application.

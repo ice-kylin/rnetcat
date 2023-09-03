@@ -3,7 +3,7 @@ use std::process;
 use log::error;
 
 use crate::cli;
-use crate::network::parse;
+use crate::net::parse;
 
 pub trait Connectable {
     fn get_socket_addr(cli: &cli::Cli) -> std::net::SocketAddr {
