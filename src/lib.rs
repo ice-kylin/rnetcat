@@ -34,6 +34,6 @@ async fn process(cli: &cli::Cli) {
     if cli.listen {
         listener::start_listener(&cli).await;
     } else {
-        connector::connect_to_server().await;
+        connector::connect_to_server(&cli).await;
     }
 }

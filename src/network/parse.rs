@@ -171,7 +171,7 @@ mod tests {
 
     #[test]
     fn test_parse_socket_addr_8() -> Result<(), HostParseError> {
-        let socket_addr = parse_socket_addr(&parse_cli(&["rnc","-4","localhost"]))?;
+        let socket_addr = parse_socket_addr(&parse_cli(&["rnc", "-4", "localhost"]))?;
 
         assert_eq!(socket_addr.ip(), IpAddr::V4(Ipv4Addr::LOCALHOST));
         assert_eq!(socket_addr.port(), 31337);
@@ -181,13 +181,13 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "IpVersionMismatch")]
-    fn test_parse_socket_addr_9()  {
-        parse_socket_addr(&parse_cli(&["rnc","-6","127.0.0.1"])).unwrap();
+    fn test_parse_socket_addr_9() {
+        parse_socket_addr(&parse_cli(&["rnc", "-6", "127.0.0.1"])).unwrap();
     }
 
     #[test]
     #[should_panic(expected = "NoHostName")]
-    fn test_parse_socket_addr_10()  {
+    fn test_parse_socket_addr_10() {
         parse_socket_addr(&parse_cli(&["rnc"])).unwrap();
     }
 }
