@@ -180,12 +180,14 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_port_none() {
-        assert_eq!(parse_port(None), 31337);
+    #[should_panic(expected = "IpVersionMismatch")]
+    fn test_parse_socket_addr_9()  {
+        parse_socket_addr(&parse_cli(&["rnc","-6","127.0.0.1"])).unwrap();
     }
 
     #[test]
-    fn test_parse_port_some() {
-        assert_eq!(parse_port(Some(1234)), 1234);
+    #[should_panic(expected = "NoHostName")]
+    fn test_parse_socket_addr_10()  {
+        parse_socket_addr(&parse_cli(&["rnc"])).unwrap();
     }
 }
