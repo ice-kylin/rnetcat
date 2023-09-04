@@ -3,11 +3,8 @@ use std::process;
 
 use log::{error, info};
 use tokio::io;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
-use tokio::sync::broadcast;
-use tokio::sync::broadcast::Sender;
 use tokio_util::sync::CancellationToken;
 
 use crate::net::connectable::Connectable;
@@ -18,7 +15,6 @@ struct Connector<'a> {
     socket_addr: SocketAddr,
     rd: Option<OwnedReadHalf>,
     wr: Option<OwnedWriteHalf>,
-    tx: Sender<Vec<u8>>,
     tk: CancellationToken,
 }
 
@@ -30,15 +26,12 @@ impl Connectable for Connector<'_> {}
 
 impl<'a> Connector<'a> {
     /// Create a new connector.
-    fn build(cli: &'a cli::Cli) -> Connector<'a> {
-        let (tx, _) = broadcast::channel(16);
-
+    fn build(cli: &'a cli::Cli) -> Self {
         Self {
             _cli: cli,
             socket_addr: Connector::get_socket_addr(cli),
             rd: None,
             wr: None,
-            tx,
             tk: CancellationToken::new(),
         }
     }
@@ -62,39 +55,16 @@ impl<'a> Connector<'a> {
 
     /// Process the connection.
     async fn process(&mut self) {
-        self.spawn_input().spawn_write().read().await;
+        self.spawn_read_and_write().read().await;
 
         info!("Connection from {} closed.", self.socket_addr);
     }
 
-    /// Spawn a task to read from stdin and write to the broadcast channel.
-    fn spawn_input(&mut self) -> &mut Connector<'a> {
-        let tx_clone = self.tx.clone();
-        util::spawn_cancellable_task(&self.tk, async move {
-            let mut buffer = vec![0; 8192];
-            loop {
-                let n = io::stdin().read(&mut buffer).await.unwrap(); // os error
-
-                // EOF or broken pipe.
-                if n == 0 || tx_clone.send(buffer[..n].to_owned()).is_err() {
-                    break;
-                }
-            }
-        });
-
-        self
-    }
-
-    /// Spawn a task to write bytes from the broadcast channel to the socket.
-    fn spawn_write(&mut self) -> &mut Connector<'a> {
-        let mut rx = self.tx.subscribe();
+    /// Spawn a task to read from stdin and write to the socket.
+    fn spawn_read_and_write(&mut self) -> &mut Connector<'a> {
         let mut wr = self.wr.take().unwrap(); // safe
         util::spawn_cancellable_task(&self.tk, async move {
-            while let Ok(msg) = rx.recv().await {
-                if wr.write_all(&msg).await.is_err() {
-                    break;
-                }
-            }
+            io::copy(&mut io::stdin(), &mut wr).await.unwrap(); // os error
         });
 
         self

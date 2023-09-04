@@ -13,8 +13,8 @@ use crate::cli;
 use crate::net::connectable::Connectable;
 use crate::util;
 
-struct Listener {
-    cli: cli::Cli,
+struct Listener<'a> {
+    cli: &'a cli::Cli,
     socket_addr: SocketAddr,
     listener: Option<TcpListener>,
     tx: broadcast::Sender<Vec<u8>>,
@@ -30,7 +30,7 @@ struct ListenerConnection {
 }
 
 pub async fn start_listener(cli: &cli::Cli) {
-    Listener::build(cli.to_owned())
+    Listener::build(cli)
         .bind()
         .await
         .spawn_input()
@@ -38,10 +38,10 @@ pub async fn start_listener(cli: &cli::Cli) {
         .await;
 }
 
-impl Connectable for Listener {}
+impl Connectable for Listener<'_> {}
 
-impl Listener {
-    fn build(cli: cli::Cli) -> Self {
+impl<'a> Listener<'a> {
+    fn build(cli: &'a cli::Cli) -> Self {
         let (tx, _) = broadcast::channel(16);
         let socket_addr = Listener::get_socket_addr(&cli);
 
@@ -54,7 +54,7 @@ impl Listener {
         }
     }
 
-    async fn bind(&mut self) -> &mut Self {
+    async fn bind(&'a mut self) -> &mut Listener<'a> {
         self.listener = Some(match TcpListener::bind(self.socket_addr).await {
             Ok(listener) => listener,
             Err(e) => {
@@ -96,6 +96,7 @@ impl Listener {
             loop {
                 let n = io::stdin().read(&mut buffer).await.unwrap(); // os error
 
+                // EOF or broken pipe.
                 if n == 0 || tx_clone.send(buffer[..n].to_owned()).is_err() {
                     break;
                 }
@@ -107,7 +108,7 @@ impl Listener {
 }
 
 impl ListenerConnection {
-    async fn accept(listener: &Listener) -> Self {
+    async fn accept(listener: &Listener<'_>) -> Self {
         let (socket, client_addr) = listener
             .listener
             .as_ref()
@@ -155,3 +156,6 @@ impl ListenerConnection {
         info!("Connection from {} closed.", self.client_addr);
     }
 }
+
+#[cfg(test)]
+mod tests {}
