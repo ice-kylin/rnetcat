@@ -29,6 +29,7 @@ pub async fn connect_to_server(cli: &cli::Cli) {
 impl Connectable for Connector<'_> {}
 
 impl<'a> Connector<'a> {
+    /// Create a new connector.
     fn build(cli: &'a cli::Cli) -> Connector<'a> {
         let (tx, _) = broadcast::channel(16);
 
@@ -42,6 +43,7 @@ impl<'a> Connector<'a> {
         }
     }
 
+    /// Get the socket address.
     async fn connect(&mut self) -> &mut Connector<'a> {
         let (rd, wr) = match TcpStream::connect(self.socket_addr).await {
             Ok(socket) => socket,
@@ -51,21 +53,21 @@ impl<'a> Connector<'a> {
             }
         }
         .into_split();
-
         self.rd = Some(rd);
         self.wr = Some(wr);
 
         info!("Connecting to {}.", self.socket_addr);
-
         self
     }
 
+    /// Listen for incoming messages.
     async fn listen(&mut self) {
         self.spawn_input().spawn_write().read().await;
 
         info!("Connection from {} closed.", self.socket_addr);
     }
 
+    /// Spawn a task to read from stdin and write to the broadcast channel.
     fn spawn_input(&mut self) -> &mut Connector<'a> {
         let tx_clone = self.tx.clone();
         util::spawn_cancellable_task(&self.tk, async move {
@@ -73,6 +75,7 @@ impl<'a> Connector<'a> {
             loop {
                 let n = io::stdin().read(&mut buffer).await.unwrap(); // os error
 
+                // EOF or broken pipe.
                 if n == 0 || tx_clone.send(buffer[..n].to_owned()).is_err() {
                     break;
                 }
@@ -82,10 +85,10 @@ impl<'a> Connector<'a> {
         self
     }
 
+    /// Spawn a task to write bytes from the broadcast channel to the socket.
     fn spawn_write(&mut self) -> &mut Connector<'a> {
         let mut rx = self.tx.subscribe();
         let mut wr = self.wr.take().unwrap(); // safe
-
         util::spawn_cancellable_task(&self.tk, async move {
             while let Ok(msg) = rx.recv().await {
                 if wr.write_all(&msg).await.is_err() {
@@ -97,6 +100,7 @@ impl<'a> Connector<'a> {
         self
     }
 
+    /// Read from the socket and write to stdout.
     async fn read(&mut self) {
         io::copy(
             self.rd.as_mut().unwrap(), // safe
