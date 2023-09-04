@@ -23,7 +23,7 @@ struct Connector<'a> {
 }
 
 pub async fn connect_to_server(cli: &cli::Cli) {
-    Connector::build(cli).connect().await.listen().await;
+    Connector::build(cli).connect().await.process().await;
 }
 
 impl Connectable for Connector<'_> {}
@@ -60,8 +60,8 @@ impl<'a> Connector<'a> {
         self
     }
 
-    /// Listen for incoming messages.
-    async fn listen(&mut self) {
+    /// Process the connection.
+    async fn process(&mut self) {
         self.spawn_input().spawn_write().read().await;
 
         info!("Connection from {} closed.", self.socket_addr);

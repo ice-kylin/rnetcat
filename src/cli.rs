@@ -5,7 +5,7 @@ use clap_verbosity_flag::WarnLevel;
 
 const PORT_RANGE: RangeInclusive<usize> = 1..=65535;
 
-#[derive(Parser)]
+#[derive(Parser, Clone)]
 #[command(author, version, about, long_about)]
 pub struct Cli {
     #[command(flatten)]
@@ -31,7 +31,7 @@ pub struct Cli {
     pub verbose: clap_verbosity_flag::Verbosity<WarnLevel>,
 }
 
-#[derive(Args)]
+#[derive(Args, Clone)]
 #[group(required = false, multiple = false)]
 pub struct Ipvs {
     /// Use IPv4 only

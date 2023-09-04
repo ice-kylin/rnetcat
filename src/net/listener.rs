@@ -4,65 +4,135 @@ use std::process;
 use log::{error, info};
 use tokio::io;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpListener;
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
 use crate::cli;
-use crate::{cancellable_task, util};
+use crate::net::connectable::Connectable;
+use crate::util;
 
-use super::parse;
+struct Listener {
+    cli: cli::Cli,
+    socket_addr: SocketAddr,
+    listener: Option<TcpListener>,
+    tx: broadcast::Sender<Vec<u8>>,
+    tk: CancellationToken,
+}
+
+struct ListenerConnection {
+    client_addr: SocketAddr,
+    rd: Option<OwnedReadHalf>,
+    wr: Option<OwnedWriteHalf>,
+    tx: broadcast::Sender<Vec<u8>>,
+    tk: CancellationToken,
+}
 
 pub async fn start_listener(cli: &cli::Cli) {
-    let socket_addr = match parse::parse_socket_addr(cli) {
-        Ok(socket_addr) => socket_addr,
-        Err(e) => {
-            error!("{}. QUITTING", e);
-            process::exit(exitcode::USAGE);
-        }
-    };
-
-    match tcp_listener_from(&socket_addr).await {
-        Ok(listener) => {
-            listening_on(&listener, &socket_addr, cli).await;
-        }
-        Err(e) => {
-            error!("Bind to {}: {}. QUITTING", socket_addr, e);
-            process::exit(exitcode::NOHOST);
-        }
-    };
+    Listener::build(cli.to_owned())
+        .bind()
+        .await
+        .spawn_input()
+        .process()
+        .await;
 }
 
-async fn tcp_listener_from(socket_addr: &SocketAddr) -> io::Result<TcpListener> {
-    TcpListener::bind(socket_addr).await
-}
+impl Connectable for Listener {}
 
-async fn listening_on(listener: &TcpListener, socket_addr: &SocketAddr, cli: &cli::Cli) {
-    let (tx, _) = broadcast::channel(16);
-    let tk = CancellationToken::new();
+impl Listener {
+    fn build(cli: cli::Cli) -> Self {
+        let (tx, _) = broadcast::channel(16);
+        let socket_addr = Listener::get_socket_addr(&cli);
 
-    let tx_clone = tx.clone();
-    util::spawn_cancellable_task(&tk, async move {
-        let mut buffer = vec![0; 1024];
-        loop {
-            let n = io::stdin().read(&mut buffer).await.unwrap(); // os error
+        Self {
+            cli,
+            socket_addr,
+            listener: None,
+            tx,
+            tk: CancellationToken::new(),
+        }
+    }
 
-            if n == 0 || tx_clone.send(buffer[..n].to_owned()).is_err() {
-                break;
+    async fn bind(&mut self) -> &mut Self {
+        self.listener = Some(match TcpListener::bind(self.socket_addr).await {
+            Ok(listener) => listener,
+            Err(e) => {
+                error!("Bind to {}: {}. QUITTING", self.socket_addr, e);
+                process::exit(exitcode::NOHOST);
             }
+        });
+
+        info!("Listening on {}.", self.socket_addr);
+
+        self
+    }
+
+    async fn process(&mut self) {
+        if self.cli.keep_open {
+            loop {
+                let mut connection = ListenerConnection::accept(self).await;
+                connection.spawn_write();
+
+                tokio::spawn(async move {
+                    connection.read().await;
+                });
+            }
+        } else {
+            ListenerConnection::accept(self)
+                .await
+                .spawn_write()
+                .read()
+                .await;
         }
-    });
 
-    info!("Listening on {}.", socket_addr);
+        info!("Listener on {} closed.", self.socket_addr);
+    }
 
-    loop {
-        let (socket, addr) = listener.accept().await.unwrap();
-        let (mut rd, mut wr) = socket.into_split();
+    fn spawn_input(&mut self) -> &mut Self {
+        let tx_clone = self.tx.clone();
+        util::spawn_cancellable_task(&self.tk, async move {
+            let mut buffer = vec![0; 8192];
+            loop {
+                let n = io::stdin().read(&mut buffer).await.unwrap(); // os error
 
-        info!("Accepted connection from {}.", addr);
+                if n == 0 || tx_clone.send(buffer[..n].to_owned()).is_err() {
+                    break;
+                }
+            }
+        });
 
-        let mut rx = tx.subscribe();
-        util::spawn_cancellable_task(&tk, async move {
+        self
+    }
+}
+
+impl ListenerConnection {
+    async fn accept(listener: &Listener) -> Self {
+        let (socket, client_addr) = listener
+            .listener
+            .as_ref()
+            .unwrap() // safe
+            .accept()
+            .await
+            .unwrap(); // os error
+        let (rd, wr) = socket.into_split();
+
+        info!("Accepted connection from {}.", client_addr);
+
+        Self {
+            client_addr,
+            rd: Some(rd),
+            wr: Some(wr),
+            tx: listener.tx.clone(),
+            tk: listener.tk.clone(),
+        }
+    }
+
+    /// Spawn a task to write bytes from the broadcast channel to the socket.
+    fn spawn_write(&mut self) -> &mut Self {
+        let mut rx = self.tx.subscribe();
+        let mut wr = self.wr.take().unwrap(); // safe
+        util::spawn_cancellable_task(&self.tk, async move {
             while let Ok(msg) = rx.recv().await {
                 if wr.write_all(&msg).await.is_err() {
                     break;
@@ -70,21 +140,18 @@ async fn listening_on(listener: &TcpListener, socket_addr: &SocketAddr, cli: &cl
             }
         });
 
-        let task = cancellable_task!(tk, async move {
-            io::copy(&mut rd, &mut io::stdout()).await.unwrap();
-
-            info!("Connection from {} closed.", addr);
-        });
-
-        if cli.keep_open {
-            tokio::spawn(task);
-        } else {
-            task.await;
-            tk.cancel();
-
-            break;
-        }
+        self
     }
 
-    info!("Listener on {} closed.", socket_addr);
+    /// Read from the socket and write to stdout.
+    async fn read(&mut self) {
+        io::copy(
+            self.rd.as_mut().unwrap(), // safe
+            &mut io::stdout(),
+        )
+        .await
+        .unwrap(); // os error
+
+        info!("Connection from {} closed.", self.client_addr);
+    }
 }
